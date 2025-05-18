@@ -1,65 +1,55 @@
-import random
 import os
-import string
+import json
+import random
+from indicator_library import get_indicator_logic
 
-TEMPLATE = """
+MODULE_DIR = "/mnt/data/hello/modules"
+MEMORY_PATH = "/mnt/data/hello/memory/trust_map.json"
+TOP_SYMBOLS_PATH = "/mnt/data/hello/top_symbols.json"
+
+os.makedirs(MODULE_DIR, exist_ok=True)
+os.makedirs(os.path.dirname(MEMORY_PATH), exist_ok=True)
+
+def generate_module(symbol):
+    indicator = random.choice(["rsi", "macd", "ma", "atr"])
+    logic = get_indicator_logic(indicator)
+    if logic is None:
+        print(f"[跳過] 不支援的指標：{indicator}")
+        return None
+
+    code = f"""
 def run(data, capital, history):
-    log = []
-    position = None
-    entry_price = 0
-    for i, candle in enumerate(data):
-        if position is None and {buy_condition}:
-            position = 'LONG'
-            entry_price = candle['close']
-            log.append({{"action": "buy", "price": entry_price, "index": i}})
-        elif position == 'LONG' and {sell_condition}:
-            exit_price = candle['close']
-            profit = (exit_price - entry_price) / entry_price
-            capital += capital * profit
-            log.append({{"action": "sell", "price": exit_price, "index": i, "profit": profit}})
-            position = None
+{logic}
     return {{
-        "log": log,
-        "final_capital": capital,
-        "score": capital - history.get("initial_capital", 100)
+        'log': log,
+        'final_capital': capital,
+        'score': capital - history.get('initial_capital', 100)
     }}
 """
+    return code.strip()
 
-BUY_OPTIONS = [
-    "candle['rsi'] < 30",
-    "candle['macd'] > candle['macdsignal']",
-    "candle['k'] < candle['d']",
-    "candle['close'] < candle['bb_lower']",
-    "candle['ma5'] > candle['ma20']",
-    "candle['atr'] > candle['atr_avg']",
-    "candle['obv'] > candle['obv_ma']"
-]
+def update_memory(filename, indicator):
+    if os.path.exists(MEMORY_PATH):
+        with open(MEMORY_PATH, "r") as f:
+            memory = json.load(f)
+    else:
+        memory = {}
+    memory[filename] = {"indicator": indicator}
+    with open(MEMORY_PATH, "w") as f:
+        json.dump(memory, f, indent=2)
 
-SELL_OPTIONS = [
-    "candle['rsi'] > 70",
-    "candle['macd'] < candle['macdsignal']",
-    "candle['k'] > 80",
-    "candle['close'] > candle['bb_upper']",
-    "candle['ma5'] < candle['ma20']",
-    "candle['atr'] < candle['atr_avg']",
-    "candle['obv'] < candle['obv_ma']"
-]
+def main():
+    with open(TOP_SYMBOLS_PATH, "r") as f:
+        symbols = json.load(f)
 
-def generate_module():
-    buy = " and ".join(random.sample(BUY_OPTIONS, k=random.randint(2, 3)))
-    sell = " or ".join(random.sample(SELL_OPTIONS, k=random.randint(2, 3)))
-    code = TEMPLATE.format(buy_condition=buy, sell_condition=sell)
-    return code
-
-def save_module(code):
-    os.makedirs("modules", exist_ok=True)
-    name = "mod_" + ''.join(random.choices(string.ascii_lowercase + string.digits, k=10)) + ".py"
-    with open(f"modules/{name}", "w") as f:
-        f.write(code)
-    print(f"[Î©] å¼·åæ¨¡çµå·²ç¢çï¼{name}")
+    for symbol in symbols:
+        filename = f"mod_{symbol.lower()}_{random.randint(1000,9999)}.py"
+        path = os.path.join(MODULE_DIR, filename)
+        code = generate_module(symbol)
+        if code:
+            with open(path, "w") as f:
+                f.write(code)
+            update_memory(filename, "auto")
 
 if __name__ == "__main__":
-    count = random.randint(2, 3)
-    for _ in range(count):
-        code = generate_module()
-        save_module(code)
+    main()
