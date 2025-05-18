@@ -1,66 +1,59 @@
 import os
 import json
 
-MODULE_DIR = "modules"
-TRUST_FILE = "trust_map.json"
-CLEAN_THRESHOLD = -3
-MAX_MODULES = 100
+MODULE_PATH = "/mnt/data/hello/modules/"
+MEMORY_FILE = "/mnt/data/hello/memory_record.json"
 
-def load_trust_map():
-    if not os.path.exists(TRUST_FILE):
-        print("[Ω] 找不到信心圖譜，請先執行 v11")
-        return {}
-    with open(TRUST_FILE, "r") as f:
-        return json.load(f)
+def is_valid_module(file_path):
+    try:
+        with open(file_path, "r") as f:
+            source = f.read()
+        compile(source, file_path, 'exec')
+        return True
+    except Exception as e:
+        print(f"[X] 語法錯誤模組：{file_path.split('/')[-1]} → {e}")
+        return False
 
-def clean_low_trust_modules(trust_map):
-    removed = []
-    for mod, trust in list(trust_map.items()):
-        if trust.get("score", 0) <= CLEAN_THRESHOLD:
-            mod_path = os.path.join(MODULE_DIR, mod)
-            if os.path.exists(mod_path):
-                os.remove(mod_path)
-                removed.append(mod)
-                print(f"[Ω] 模組 {mod} 已清除（信心過低）")
-                trust_map.pop(mod)
-    return removed
+def is_failed_module(file_path):
+    try:
+        with open(file_path, "r") as f:
+            code = f.read()
+        if "'score':" in code and "'final_capital':" in code:
+            score_line = [line for line in code.splitlines() if "'score':" in line]
+            capital_line = [line for line in code.splitlines() if "'final_capital':" in line]
+            if score_line and capital_line:
+                score = float(score_line[0].split(":")[-1].strip().strip(","))
+                capital = float(capital_line[0].split(":")[-1].strip().strip(","))
+                if score < 0 or capital <= 100:
+                    print(f"[X] 績效不佳模組：{file_path.split('/')[-1]} → score={score}, capital={capital}")
+                    return True
+        return False
+    except Exception:
+        return True
 
-def clean_excess_modules(trust_map):
-    current_modules = [f for f in os.listdir(MODULE_DIR) if f.endswith(".py")]
-    if len(current_modules) <= MAX_MODULES:
-        return []
+def remove_module(file_path):
+    print(f"[!] 移除模組：{file_path.split('/')[-1]}")
+    os.remove(file_path)
 
-    # 排序：從信心最低的開始刪
-    ranked = sorted(trust_map.items(), key=lambda x: x[1].get("score", 0))
-    to_remove = len(current_modules) - MAX_MODULES
-    removed = []
+def clean_modules():
+    files = os.listdir(MODULE_PATH)
+    for file in files:
+        if not file.endswith(".py"):
+            continue
+        path = os.path.join(MODULE_PATH, file)
+        if not is_valid_module(path) or is_failed_module(path):
+            remove_module(path)
 
-    for mod, _ in ranked:
-        if mod in current_modules:
-            mod_path = os.path.join(MODULE_DIR, mod)
-            if os.path.exists(mod_path):
-                os.remove(mod_path)
-                removed.append(mod)
-                trust_map.pop(mod)
-                print(f"[Ω] 模組 {mod} 已清除（超出模組上限）")
-                to_remove -= 1
-                if to_remove == 0:
-                    break
-
-    return removed
-
-def main():
-    trust_map = load_trust_map()
-    removed_low = clean_low_trust_modules(trust_map)
-    removed_excess = clean_excess_modules(trust_map)
-
-    total_removed = removed_low + removed_excess
-    if total_removed:
-        with open(TRUST_FILE, "w") as f:
-            json.dump(trust_map, f, indent=2)
-        print(f"[Ω] 總共清除 {len(total_removed)} 支模組。")
-    else:
-        print("[Ω] 沒有需要清除的模組。")
+def clean_memory():
+    if not os.path.exists(MEMORY_FILE):
+        return
+    with open(MEMORY_FILE, "r") as f:
+        memory = json.load(f)
+    new_memory = [m for m in memory if os.path.exists(os.path.join(MODULE_PATH, f"{m['name']}.py"))]
+    with open(MEMORY_FILE, "w") as f:
+        json.dump(new_memory, f, indent=2)
+    print(f"[O] 已同步 memory_record.json，有效模組剩下：{len(new_memory)}")
 
 if __name__ == "__main__":
-    main()
+    clean_modules()
+    clean_memory()
