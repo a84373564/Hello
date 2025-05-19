@@ -1,74 +1,75 @@
 import os
 import json
-import random
 from datetime import datetime
+import importlib.util
 
-MODULE_DIR = "/mnt/data/hello/modules"
-LOG_PATH = "/mnt/data/hello/module_log.json"
-PRICE_DIR = "/mnt/data/hello/prices"
-SYMBOL_LIST_PATH = "/mnt/data/hello/top_symbols.json"
+MODULE_DIR = "modules"
+PRICE_DIR = "prices"
+SYMBOL_LIST = "top_symbols.json"
+LOG_PATH = "module_log.json"
+TEMPLATE_LOGIC = "template_logic.py"
+BUILD_PER_SYMBOL = 3
 TOP_N = 3
-BUILD_PER_SYMBOL = 5
 
 os.makedirs(MODULE_DIR, exist_ok=True)
 
 def get_risk_parameters():
-    import importlib.util
-    path = os.path.join(os.path.dirname(__file__), "v05_capital_core.py")
-    spec = importlib.util.spec_from_file_location("v05_capital_core", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.get_risk_parameters()
-
-def load_real_data(symbol):
-    filepath = os.path.join(PRICE_DIR, f"{symbol}.json")
-    if not os.path.exists(filepath):
-        return None
-    with open(filepath, "r") as f:
-        raw = json.load(f)
-        if len(raw) < 20:
-            return None
+    try:
+        spec = importlib.util.spec_from_file_location("v05", "v05_capital_core.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.get_risk_parameters()
+    except:
         return {
-            "rsi": [c["close"] for c in raw][-14:],
-            "macd": [c["close"] for c in raw][-26:],
-            "signal": [c["close"] for c in raw][-26:],
-            "ma": [c["close"] for c in raw][-10:],
-            "close": [c["close"] for c in raw],
-            "atr": [c["high"] - c["low"] for c in raw][-14:]
+            "capital": 70,
+            "max_risk": 3.5,
+            "position_size": 7,
+            "min_capital": 10
         }
 
-def simulate_module(module_code, data, history):
+def load_real_data(symbol):
+    try:
+        with open(os.path.join(PRICE_DIR, f"{symbol}.json"), "r") as f:
+            raw = json.load(f)
+        return {
+            "close": [c["close"] for c in raw]
+        }
+    except:
+        return None
+
+def simulate_module(code, data, history):
     local_env = {}
     try:
-        exec(module_code, local_env)
+        exec(code, local_env)
         if "run" not in local_env:
             return -999
         result = local_env["run"](data, capital=history["initial_capital"], history=history)
         return result.get("score", -999)
-    except Exception as e:
+    except Exception:
         return -999
 
-def generate_candidate_module():
+def generate_candidate_module(risk):
     try:
-        with open("/mnt/data/hello/template_logic.py", "r") as f:
+        with open(TEMPLATE_LOGIC, "r") as f:
             logic = f.read()
-    except:
-        return None
-    risk = get_risk_parameters()
-    code = f"""
+        indented = "\n".join(["    " + line for line in logic.splitlines()])
+        code = f"""
 def run(data, capital, history):
     log = []
     initial = capital
     max_risk = {risk['max_risk']}
     position_size = {risk['position_size']}
-{logic}
+    min_capital = {risk['min_capital']}
+{indented}
     return {{
         "log": log,
         "final_capital": capital,
         "score": capital - initial
     }}
 """.strip()
-    return code
+        return code
+    except:
+        return None
 
 def log_module(filename, score, tag):
     try:
@@ -88,37 +89,33 @@ def log_module(filename, score, tag):
         pass
 
 def main():
-    if not os.path.exists(SYMBOL_LIST_PATH):
-        print("[×] 找不到 top_symbols.json，請先執行選幣模組")
+    if not os.path.exists(SYMBOL_LIST):
+        print("[×] 沒找到 top_symbols.json")
         return
-    with open(SYMBOL_LIST_PATH, "r") as f:
+    with open(SYMBOL_LIST, "r") as f:
         symbols = json.load(f)
 
+    risk = get_risk_parameters()
     candidates = []
+
     for symbol in symbols[:5]:
         data = load_real_data(symbol)
         if not data:
             continue
-        history = {"initial_capital": get_risk_parameters()["capital"]}
         for _ in range(BUILD_PER_SYMBOL):
-            code = generate_candidate_module()
+            code = generate_candidate_module(risk)
             if code:
-                score = simulate_module(code, data, history)
+                score = simulate_module(code, data, {"initial_capital": risk["capital"]})
                 print(f"[候選] {symbol} 得分：{score}")
                 candidates.append((score, code, symbol))
 
-    if not candidates:
-        print("[×] 無模組產生")
-        return
-
     best_models = sorted(candidates, key=lambda x: x[0], reverse=True)[:TOP_N]
-    for model in best_models:
-        score, code, symbol = model
-        filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_garou.py"
+    for score, code, symbol in best_models:
+        filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}.py"
         with open(os.path.join(MODULE_DIR, filename), "w") as f:
             f.write(code)
         log_module(filename, score, f"{symbol}-garou")
-        print(f"[✓] 儲存：{filename}，score={score:.2f}")
+        print(f"[✓] 模組儲存：{filename}，score={score:.4f}")
 
 if __name__ == "__main__":
     main()
