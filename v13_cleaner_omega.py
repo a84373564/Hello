@@ -1,43 +1,40 @@
-# /mnt/data/hello/v14_trust_mapper.py
-import json
+# /mnt/data/hello/v13_cleaner_omega.py
 import os
-from datetime import datetime
+import json
 
-TRUST_FILE = "/mnt/data/hello/trust_map.json"
-HISTORY_FILE = "/mnt/data/hello/trust_history.json"
+# 模組路徑與推薦清單來源
+MODULE_DIR = "/mnt/data/hello/modules"
+RECOMMENDED_FILE = "/mnt/data/hello/recommended_modules.json"
 
-def load_trust_map():
-    if not os.path.exists(TRUST_FILE):
-        print("[Ω] 沒有找到信心圖譜，請先執行 v11")
-        return {}
-    with open(TRUST_FILE, "r") as f:
+def load_recommended():
+    if not os.path.exists(RECOMMENDED_FILE):
+        print("[!] 找不到推薦名單 recommended_modules.json，請先執行 v12")
+        return []
+    with open(RECOMMENDED_FILE, "r") as f:
         return json.load(f)
 
-def update_trust_history(trust_map):
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            history = json.load(f)
-    else:
-        history = {}
-
-    timestamp = datetime.now().isoformat()
-
-    for mod, info in trust_map.items():
-        mod_history = history.get(mod, [])
-        mod_history.append({
-            "time": timestamp,
-            "score": info.get("score", 0),
-            "recommended": info.get("recommended", False)
-        })
-        history[mod] = mod_history
-
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=2)
-    print(f"[Ω] 已更新 {len(trust_map)} 支模組的信心歷程。")
+def clean_modules(keep_list):
+    removed = 0
+    kept = 0
+    for fname in os.listdir(MODULE_DIR):
+        if not fname.endswith(".json"):
+            continue
+        full_path = os.path.join(MODULE_DIR, fname)
+        if fname not in keep_list:
+            os.remove(full_path)
+            removed += 1
+            print(f"[×] 已刪除未推薦模組：{fname}")
+        else:
+            kept += 1
+            print(f"[◎] 保留推薦模組：{fname}")
+    print(f"[*] 清理完成：保留 {kept}，刪除 {removed}")
 
 def main():
-    trust_map = load_trust_map()
-    update_trust_history(trust_map)
+    keep_list = load_recommended()
+    if not keep_list:
+        print("[!] 推薦名單為空，未進行任何刪除")
+        return
+    clean_modules(keep_list)
 
 if __name__ == "__main__":
     main()
