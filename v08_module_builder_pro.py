@@ -1,9 +1,7 @@
 import os
 import json
 import random
-import time
 from datetime import datetime
-from indicator_library import get_indicator_logic
 from v05_capital_core import get_risk_parameters
 
 MODULE_DIR = "/mnt/data/hello/modules"
@@ -11,7 +9,16 @@ TEMP_DIR = "/mnt/data/hello/_temp_modules"
 os.makedirs(MODULE_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# 模擬器（模擬 run() 結果）
+# 透過絕對路徑載入 indicator_library.py，避免找不到
+def get_indicator_logic(indicator):
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "indicator_library.py")
+    spec = importlib.util.spec_from_file_location("indicator_library", path)
+    lib = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lib)
+    return lib.get_indicator_logic(indicator)
+
+# 模擬模組執行（執行 run() 並返回 score）
 def simulate_module(module_code, data, history):
     local_env = {}
     try:
@@ -20,10 +27,10 @@ def simulate_module(module_code, data, history):
             return -999
         result = local_env["run"](data, capital=history["initial_capital"], history=history)
         return result.get("score", -999)
-    except Exception as e:
+    except Exception:
         return -999
 
-# 偽造測試資料
+# 偽造測試資料，供模擬模組使用
 def mock_data():
     return {
         "rsi": [40, 32, 28],
@@ -34,6 +41,7 @@ def mock_data():
         "atr": [1.1, 1.2, 1.3]
     }
 
+# 建構模組邏輯 code
 def generate_candidate_module(indicator):
     logic = get_indicator_logic(indicator)
     if logic is None:
@@ -54,13 +62,13 @@ def run(data, capital, history):
 """.strip()
     return code
 
+# 主流程（建構 8 組候選模組，模擬並選出最高分）
 def main():
-    candidates = []
     indicators = ["rsi", "macd", "ma", "atr"]
+    candidates = []
     data = mock_data()
     history = {"initial_capital": get_risk_parameters()["capital"]}
 
-    # 生成 8 個模組候選
     for _ in range(8):
         ind = random.choice(indicators)
         code = generate_candidate_module(ind)
@@ -72,11 +80,9 @@ def main():
         print("[×] 無可用模組產生")
         return
 
-    # 選出最高分
     best = sorted(candidates, key=lambda x: x[0], reverse=True)[0]
     best_score, best_code, best_ind = best
 
-    # 寫入模組
     filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{best_ind}.py"
     with open(os.path.join(MODULE_DIR, filename), "w") as f:
         f.write(best_code)
