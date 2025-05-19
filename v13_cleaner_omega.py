@@ -2,6 +2,7 @@
 import os
 import json
 
+# 模組路徑與推薦清單來源
 MODULE_DIR = "/mnt/data/hello/modules"
 RECOMMENDED_FILE = "/mnt/data/hello/recommended_modules.json"
 
@@ -29,11 +30,11 @@ def clean_modules(keep_list):
     print(f"[*] 清理完成：保留 {kept}，刪除 {removed}")
 
 def main():
-    recommended = load_recommended()
-    if not recommended:
-        print("[!] 無推薦模組，中止清理")
+    keep_list = load_recommended()
+    if not keep_list:
+        print("[!] 推薦名單為空，未進行任何刪除")
         return
-    clean_modules(recommended)
+    clean_modules(keep_list)
 
 if __name__ == "__main__":
     main()
