@@ -3,22 +3,24 @@ import json
 import random
 import string
 
-# 自動掃描所有可用幣種 JSON
 PRICE_DIR = "prices"
 MODULE_DIR = "modules"
 os.makedirs(MODULE_DIR, exist_ok=True)
 
+# 嘗試載入金鑰
 try:
     with open("/mnt/data/hello/mexc_keys.json") as f:
         keys = json.load(f)
         print("[Ω] API 金鑰載入成功")
-except:
+except Exception as e:
     print("[!] 未偵測到 API 金鑰設定檔，跳過自動同步")
     keys = None
 
+# 模組產生器（瘋狗版）
 def generate_module(symbol):
-    code = f"""
+    return f'''
 def run(data, capital, history):
+    import random
     log = []
     holding = False
     position_size = 0.1
@@ -41,10 +43,9 @@ def run(data, capital, history):
         "score": random.uniform(-50, 50),
         "symbol": "{symbol}"
     }}
-"""
-    return code.strip()
+'''.strip()
 
-# 掃描所有幣種 JSON
+# 掃描所有價格 JSON
 symbols = []
 for fname in os.listdir(PRICE_DIR):
     if fname.endswith(".json"):
@@ -55,10 +56,10 @@ for sym in symbols:
     try:
         with open(os.path.join(PRICE_DIR, f"{sym}.json")) as f:
             data = json.load(f)
-            if "close" not in data:
-                raise ValueError("無 close 資料")
+        if not isinstance(data, dict) or "close" not in data or not isinstance(data["close"], list):
+            raise ValueError("close 欄位格式錯誤或不存在")
     except Exception as e:
-        print(f"[!] 略過 {sym}，原因：{e}")
+        print(f"[!] 略過 {sym}，錯誤原因：{e}")
         continue
 
     for _ in range(5):
