@@ -7,9 +7,8 @@ MODULE_DIR = "/mnt/data/hello/modules"
 LOG_PATH = "/mnt/data/hello/module_log.json"
 PRICE_DIR = "/mnt/data/hello/prices"
 SYMBOL_LIST_PATH = "/mnt/data/hello/top_symbols.json"
-TOP_N = 3  # 精選保留的模組數量
-BUILD_PER_SYMBOL = 5  # 每個幣建構幾個模組
-INDICATORS = ["rsi", "macd", "ma", "atr"]
+TOP_N = 3
+BUILD_PER_SYMBOL = 5
 
 os.makedirs(MODULE_DIR, exist_ok=True)
 
@@ -21,23 +20,13 @@ def get_risk_parameters():
     spec.loader.exec_module(mod)
     return mod.get_risk_parameters()
 
-def get_indicator_logic(indicator):
-    import importlib.util
-    path = os.path.join(os.path.dirname(__file__), "indicator_library.py")
-    spec = importlib.util.spec_from_file_location("indicator_library", path)
-    lib = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(lib)
-    return lib.get_indicator_logic(indicator)
-
 def load_real_data(symbol):
     filepath = os.path.join(PRICE_DIR, f"{symbol}.json")
     if not os.path.exists(filepath):
-        print(f"[×] 缺少價格資料：{symbol}.json")
         return None
     with open(filepath, "r") as f:
         raw = json.load(f)
         if len(raw) < 20:
-            print(f"[!] {symbol} 資料不足")
             return None
         return {
             "rsi": [c["close"] for c in raw][-14:],
@@ -57,12 +46,13 @@ def simulate_module(module_code, data, history):
         result = local_env["run"](data, capital=history["initial_capital"], history=history)
         return result.get("score", -999)
     except Exception as e:
-        print(f"[×] 模擬錯誤：{str(e)}")
         return -999
 
-def generate_candidate_module(indicator):
-    logic = get_indicator_logic(indicator)
-    if logic is None:
+def generate_candidate_module():
+    try:
+        with open("/mnt/data/hello/template_logic.py", "r") as f:
+            logic = f.read()
+    except:
         return None
     risk = get_risk_parameters()
     code = f"""
@@ -80,7 +70,7 @@ def run(data, capital, history):
 """.strip()
     return code
 
-def log_module(filename, score, indicator):
+def log_module(filename, score, tag):
     try:
         log_data = []
         if os.path.exists(LOG_PATH):
@@ -89,14 +79,13 @@ def log_module(filename, score, indicator):
         log_data.append({
             "module": filename,
             "score": round(score, 4),
-            "indicator": indicator,
+            "indicator": tag,
             "created": datetime.now().isoformat()
         })
         with open(LOG_PATH, "w") as f:
             json.dump(log_data, f, indent=2)
-        print(f"[log] 已記錄：{filename}, score={score}")
-    except Exception as e:
-        print(f"[×] 紀錄失敗：{str(e)}")
+    except:
+        pass
 
 def main():
     if not os.path.exists(SYMBOL_LIST_PATH):
@@ -106,30 +95,29 @@ def main():
         symbols = json.load(f)
 
     candidates = []
-    for symbol in symbols[:5]:  # 掃前 5 個幣
+    for symbol in symbols[:5]:
         data = load_real_data(symbol)
         if not data:
             continue
         history = {"initial_capital": get_risk_parameters()["capital"]}
         for _ in range(BUILD_PER_SYMBOL):
-            ind = random.choice(INDICATORS)
-            code = generate_candidate_module(ind)
+            code = generate_candidate_module()
             if code:
                 score = simulate_module(code, data, history)
-                print(f"[候選] {symbol}-{ind} 得分：{score}")
-                candidates.append((score, code, symbol, ind))
+                print(f"[候選] {symbol} 得分：{score}")
+                candidates.append((score, code, symbol))
 
     if not candidates:
-        print("[×] 無任何模組產生")
+        print("[×] 無模組產生")
         return
 
     best_models = sorted(candidates, key=lambda x: x[0], reverse=True)[:TOP_N]
     for model in best_models:
-        score, code, symbol, ind = model
-        filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_{ind}.py"
+        score, code, symbol = model
+        filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_garou.py"
         with open(os.path.join(MODULE_DIR, filename), "w") as f:
             f.write(code)
-        log_module(filename, score, f"{symbol}-{ind}")
+        log_module(filename, score, f"{symbol}-garou")
         print(f"[✓] 儲存：{filename}，score={score:.2f}")
 
 if __name__ == "__main__":
