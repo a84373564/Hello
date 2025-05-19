@@ -8,8 +8,8 @@ PRICE_DIR = "prices"
 SYMBOL_LIST = "top_symbols.json"
 LOG_PATH = "module_log.json"
 TEMPLATE_LOGIC = "template_logic.py"
-BUILD_PER_SYMBOL = 3
-TOP_N = 3
+BUILD_PER_SYMBOL = 5
+MAX_SYMBOLS = 3
 
 os.makedirs(MODULE_DIR, exist_ok=True)
 
@@ -48,25 +48,25 @@ def simulate_module(code, data, history):
     except Exception:
         return -999
 
-def generate_candidate_module(risk):
+def generate_module_code(risk):
     try:
         with open(TEMPLATE_LOGIC, "r") as f:
             logic = f.read()
         indented = "\n".join(["    " + line for line in logic.splitlines()])
-        code = f"""
+        code = f'''
 def run(data, capital, history):
     log = []
     initial = capital
-    max_risk = {risk['max_risk']}
-    position_size = {risk['position_size']}
-    min_capital = {risk['min_capital']}
+    max_risk = {risk["max_risk"]}
+    position_size = {risk["position_size"]}
+    min_capital = {risk["min_capital"]}
 {indented}
     return {{
         "log": log,
         "final_capital": capital,
         "score": capital - initial
     }}
-""".strip()
+'''.strip()
         return code
     except:
         return None
@@ -96,26 +96,24 @@ def main():
         symbols = json.load(f)
 
     risk = get_risk_parameters()
-    candidates = []
+    total_created = 0
 
-    for symbol in symbols[:5]:
+    for symbol in symbols[:MAX_SYMBOLS]:
         data = load_real_data(symbol)
         if not data:
             continue
         for _ in range(BUILD_PER_SYMBOL):
-            code = generate_candidate_module(risk)
+            code = generate_module_code(risk)
             if code:
                 score = simulate_module(code, data, {"initial_capital": risk["capital"]})
-                print(f"[候選] {symbol} 得分：{score}")
-                candidates.append((score, code, symbol))
+                filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_mad.py"
+                with open(os.path.join(MODULE_DIR, filename), "w") as f:
+                    f.write(code)
+                log_module(filename, score, f"{symbol}-mad")
+                print(f"[✓] 模組儲存：{filename}（score={score:.4f}）")
+                total_created += 1
 
-    best_models = sorted(candidates, key=lambda x: x[0], reverse=True)[:TOP_N]
-    for score, code, symbol in best_models:
-        filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}.py"
-        with open(os.path.join(MODULE_DIR, filename), "w") as f:
-            f.write(code)
-        log_module(filename, score, f"{symbol}-garou")
-        print(f"[✓] 模組儲存：{filename}，score={score:.4f}")
+    print(f"[Ω] 本輪總共產出 {total_created} 支模組")
 
 if __name__ == "__main__":
     main()
