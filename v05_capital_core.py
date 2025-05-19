@@ -30,5 +30,15 @@ def reset_capital():
         json.dump(data, f, indent=4)
     print(f"[Ω] 資金重置為初始值 {initial:.2f} USDT")
 
+def get_risk_parameters():
+    capital = load_capital()
+    return {
+        "capital": capital,
+        "max_risk": round(capital * 0.03, 2),
+        "position_size": round(capital * 0.1, 2),
+        "min_capital": 10
+    }
+
 if __name__ == "__main__":
     print("[Ω] 當前資金：", load_capital(), "USDT")
+    print("[Ω] 風控參數：", get_risk_parameters())
