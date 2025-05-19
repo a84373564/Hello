@@ -1,5 +1,29 @@
 import os
 import json
+
+def fix_json_prices(folder="prices"):
+    for fname in os.listdir(folder):
+        if not fname.endswith(".json"):
+            continue
+        path = os.path.join(folder, fname)
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                # 舊格式為 list，轉成 {"close": [...]}
+                fixed = {"close": data}
+                with open(path, "w") as f:
+                    json.dump(fixed, f)
+            elif isinstance(data, dict) and "close" not in data:
+                # dict 但沒有 close，加上空陣列
+                data["close"] = []
+                with open(path, "w") as f:
+                    json.dump(data, f)
+        except Exception as e:
+            print(f"[×] 修復 {fname} 失敗：{e}")
+
+import os
+import json
 import random
 
 MODULE_DIR = "modules"
