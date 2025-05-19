@@ -2,12 +2,22 @@ import os
 import json
 import random
 import string
-from datetime import datetime
 
+# === 路徑與資料夾 ===
 PRICE_DIR = "prices"
 MODULE_DIR = "modules"
 os.makedirs(MODULE_DIR, exist_ok=True)
 
+# === 嘗試讀取 MEXC API 金鑰（不會中斷） ===
+try:
+    with open("/mnt/data/hello/mexc_keys.json") as f:
+        keys = json.load(f)
+        print("[Ω] API 金鑰載入成功")
+except:
+    print("[!] 未偵測到 API 金鑰設定檔，跳過自動同步")
+    keys = None
+
+# === 瘋狗 Garou 策略模組產生器 ===
 def generate_module(symbol):
     code = f"""
 def run(data, capital, history):
@@ -36,27 +46,33 @@ def run(data, capital, history):
 """
     return code.strip()
 
-today = datetime.now().strftime("%Y%m%d")
-count = 0
+# === 掃描所有可用幣種 JSON ===
+symbols = []
+if os.path.exists(PRICE_DIR):
+    for fname in os.listdir(PRICE_DIR):
+        if fname.endswith(".json"):
+            symbols.append(fname.replace(".json", ""))
+else:
+    print(f"[!] 價格資料夾不存在：{PRICE_DIR}")
+    exit(0)
 
-for fname in os.listdir(PRICE_DIR):
-    if not fname.endswith(".json"):
-        continue
-    symbol = fname.replace(".json", "")
+# === 建構模組 ===
+count = 0
+for sym in symbols:
     try:
-        with open(os.path.join(PRICE_DIR, fname)) as f:
+        with open(os.path.join(PRICE_DIR, f"{sym}.json")) as f:
             data = json.load(f)
             if "close" not in data:
-                raise ValueError("缺少 close 資料")
+                raise ValueError("無 close 資料")
     except Exception as e:
-        print(f"[!] 略過 {symbol}，原因：{e}")
+        print(f"[!] 略過 {sym}，原因：{e}")
         continue
 
-    for _ in range(5):  # 每個幣種產 5 支模組
-        modname = f"module_{today}_{''.join(random.choices(string.digits, k=6))}_{symbol}_mad.py"
+    for _ in range(5):
+        modname = f"module_20250519_{''.join(random.choices(string.digits, k=6))}_{sym}_mad.py"
         with open(os.path.join(MODULE_DIR, modname), "w") as f:
-            f.write(generate_module(symbol))
-        print(f"[✓] 產出模組：{modname}")
+            f.write(generate_module(sym))
+        print(f"[✓] 模組儲存：{modname}")
         count += 1
 
-print(f"[Ω] 本輪共產出 {count} 支模組")
+print(f"[Ω] 本輪總共產出 {count} 支模組")
