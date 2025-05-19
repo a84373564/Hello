@@ -1,78 +1,42 @@
+# /mnt/data/hello/v10_performance_evaluator.py
 import os
 import json
-import random
-import string
 
-PRICE_DIR = "prices"
-MODULE_DIR = "modules"
-os.makedirs(MODULE_DIR, exist_ok=True)
+RECORD_FILE = "/mnt/data/hello/module_records.json"
+OUTPUT_FILE = "/mnt/data/hello/module_scores.json"
 
-try:
-    with open("/mnt/data/hello/mexc_keys.json") as f:
-        keys = json.load(f)
-        print("[Ω] API 金鑰載入成功")
-except Exception:
-    print("[!] 未偵測到 API 金鑰設定檔，跳過自動同步")
-    keys = None
+def evaluate_module(record):
+    win_rate = record.get("win_rate", 0)
+    drawdown = record.get("drawdown", 0)
+    profit = record.get("profit", 0)
+    sharpe = round((win_rate * profit) / (drawdown + 1e-6), 4)  # 避免除以 0
+    score = round((win_rate * 0.5 + profit * 0.4 - drawdown * 0.1) * sharpe, 4)
+    return {
+        "symbol": record.get("symbol", "NA"),
+        "win_rate": win_rate,
+        "profit": profit,
+        "drawdown": drawdown,
+        "sharpe": sharpe,
+        "score": score,
+        "source": record.get("module")
+    }
 
-def generate_module(symbol):
-    code = f"""
-import random
+def main():
+    if not os.path.exists(RECORD_FILE):
+        print("[!] 找不到模擬紀錄 module_records.json，請先執行 v09")
+        return
 
-def run(data, capital, history):
-    log = []
-    holding = False
-    min_capital = 10
-    position_size = 0.1
+    with open(RECORD_FILE, "r") as f:
+        records = json.load(f)
 
-    for i in range(len(data["close"])):
-        price = data["close"][i]
-        if i % 5 == 0 and not holding:
-            if capital >= min_capital:
-                capital -= price * position_size
-                log.append(f"Buy at {{price:.2f}}")
-                holding = True
-        elif i % 5 == 3 and holding:
-            capital += price * position_size
-            log.append(f"Sell at {{price:.2f}}")
-            holding = False
+    results = {}
+    for module, record in records.items():
+        results[module] = evaluate_module(record)
 
-    return {{
-        "log": log,
-        "score": random.uniform(-50, 50),
-        "symbol": "{symbol}"
-    }}
-"""
-    return code.strip()
+    with open(OUTPUT_FILE, "w") as f:
+        json.dump(results, f, indent=2)
 
-symbols = []
-for fname in os.listdir(PRICE_DIR):
-    if not fname.endswith(".json"):
-        continue
+    print(f"[*] 已計算 {len(results)} 筆模組評分 → 寫入 module_scores.json")
 
-    symbol = fname.replace(".json", "")
-    fpath = os.path.join(PRICE_DIR, fname)
-
-    try:
-        with open(fpath, "r") as f:
-            data = json.load(f)
-        if "close" not in data and isinstance(data, list):
-            data = {"close": data}
-            with open(fpath, "w") as f:
-                json.dump(data, f)
-        if "close" in data and isinstance(data["close"], list) and len(data["close"]) > 10:
-            symbols.append(symbol)
-    except Exception as e:
-        print(f"[!] 無法讀取 {fname}：{e}")
-
-count = 0
-for sym in symbols:
-    for _ in range(5):
-        name = f"module_20250519_{''.join(random.choices(string.digits, k=6))}_{sym}_mad.py"
-        path = os.path.join(MODULE_DIR, name)
-        with open(path, "w") as f:
-            f.write(generate_module(sym))
-        print(f"[✓] 模組儲存：{name}")
-        count += 1
-
-print(f"[Ω] 本輪總共產出 {count} 支模組")
+if __name__ == "__main__":
+    main()
