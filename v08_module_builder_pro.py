@@ -31,9 +31,7 @@ def load_real_data(symbol):
     try:
         with open(os.path.join(PRICE_DIR, f"{symbol}.json"), "r") as f:
             raw = json.load(f)
-        return {
-            "close": [c["close"] for c in raw]
-        }
+        return {"close": [c["close"] for c in raw]}
     except:
         return None
 
@@ -45,7 +43,8 @@ def simulate_module(code, data, history):
             return -999
         result = local_env["run"](data, capital=history["initial_capital"], history=history)
         return result.get("score", -999)
-    except Exception:
+    except Exception as e:
+        print("[×] 模組模擬錯誤：", e)
         return -999
 
 def generate_module_code(risk):
@@ -68,7 +67,8 @@ def run(data, capital, history):
     }}
 '''.strip()
         return code
-    except:
+    except Exception as e:
+        print("[×] 模組產生錯誤：", e)
         return None
 
 def log_module(filename, score, tag):
