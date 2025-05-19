@@ -2,14 +2,22 @@ import os
 import json
 import random
 from datetime import datetime
-from v05_capital_core import get_risk_parameters
 
 MODULE_DIR = "/mnt/data/hello/modules"
 TEMP_DIR = "/mnt/data/hello/_temp_modules"
 os.makedirs(MODULE_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# 透過絕對路徑載入 indicator_library.py，避免找不到
+# 動態載入 v05_capital_core
+def get_risk_parameters():
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "v05_capital_core.py")
+    spec = importlib.util.spec_from_file_location("v05_capital_core", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.get_risk_parameters()
+
+# 動態載入 indicator_library
 def get_indicator_logic(indicator):
     import importlib.util
     path = os.path.join(os.path.dirname(__file__), "indicator_library.py")
@@ -18,7 +26,7 @@ def get_indicator_logic(indicator):
     spec.loader.exec_module(lib)
     return lib.get_indicator_logic(indicator)
 
-# 模擬模組執行（執行 run() 並返回 score）
+# 模擬模組執行邏輯
 def simulate_module(module_code, data, history):
     local_env = {}
     try:
@@ -30,7 +38,7 @@ def simulate_module(module_code, data, history):
     except Exception:
         return -999
 
-# 偽造測試資料，供模擬模組使用
+# 假資料（供模擬）
 def mock_data():
     return {
         "rsi": [40, 32, 28],
@@ -41,7 +49,7 @@ def mock_data():
         "atr": [1.1, 1.2, 1.3]
     }
 
-# 建構模組邏輯 code
+# 建構候選模組
 def generate_candidate_module(indicator):
     logic = get_indicator_logic(indicator)
     if logic is None:
@@ -62,7 +70,7 @@ def run(data, capital, history):
 """.strip()
     return code
 
-# 主流程（建構 8 組候選模組，模擬並選出最高分）
+# 主流程：模擬 + 精選最強模組
 def main():
     indicators = ["rsi", "macd", "ma", "atr"]
     candidates = []
