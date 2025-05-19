@@ -1,11 +1,15 @@
 import os
+import time
 import subprocess
+from datetime import datetime
 
 CYCLE_FILE = "/mnt/data/hello/.cycle_count"
 MODULES_DIR = "/mnt/data/hello"
-CYCLE = 1
+LOGFILE = "/mnt/data/hello/guard.log"
+MAX_LOG_SIZE = 1000 * 1024  # 1MB
+MAX_LOG_BACKUPS = 5
 
-# 高頻模組：每輪都跑
+# 模組分層
 HIGH_FREQ = [
     "v03_symbol_screener_omega.py",
     "v04_price_fetcher.py",
@@ -19,7 +23,6 @@ HIGH_FREQ = [
     "v16.5_tactical_pruner.py"
 ]
 
-# 中頻模組：每 N 輪執行一次
 MID_FREQ = {
     "v17_elite_saver.py": 3,
     "v18_mutation_mixer.py": 2,
@@ -27,20 +30,24 @@ MID_FREQ = {
     "v20_strategy_generator.py": 5
 }
 
-# 低頻模組：偶爾執行的分析與優化
 LOW_FREQ = {
     "v21_gene_analyzer.py": 10,
     "v22_performance_tracker.py": 5,
     "v23_system_risk_analyzer.py": 10
 }
 
-def run_module(filename):
-    path = os.path.join(MODULES_DIR, filename)
-    if os.path.exists(path):
-        print(f"[+] 執行模組：{filename}")
-        subprocess.call(["python3", path])
-    else:
-        print(f"[!] 模組不存在：{filename}")
+def rotate_log():
+    if os.path.exists(LOGFILE) and os.path.getsize(LOGFILE) > MAX_LOG_SIZE:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"/mnt/data/hello/guard_{timestamp}.log"
+        os.rename(LOGFILE, backup_name)
+        # 清除多餘備份
+        logs = sorted([
+            f for f in os.listdir("/mnt/data/hello")
+            if f.startswith("guard_") and f.endswith(".log")
+        ])
+        while len(logs) > MAX_LOG_BACKUPS:
+            os.remove(os.path.join("/mnt/data/hello", logs.pop(0)))
 
 def get_cycle():
     if os.path.exists(CYCLE_FILE):
@@ -52,24 +59,47 @@ def save_cycle(cycle):
     with open(CYCLE_FILE, "w") as f:
         f.write(str(cycle))
 
+def run_module(filename):
+    path = os.path.join(MODULES_DIR, filename)
+    if os.path.exists(path):
+        with open(LOGFILE, "a") as log:
+            log.write(f"[+] 執行模組：{filename}\n")
+        subprocess.call(["python3", path])
+    else:
+        with open(LOGFILE, "a") as log:
+            log.write(f"[!] 模組不存在：{filename}\n")
+
+def count_modules():
+    mod_path = os.path.join(MODULES_DIR, "modules")
+    if os.path.exists(mod_path):
+        return len([f for f in os.listdir(mod_path) if f.endswith(".json")])
+    return 0
+
 def main():
-    global CYCLE
-    CYCLE = get_cycle()
-    print(f"--- 執行週期：第 {CYCLE} 輪 ---")
+    while True:
+        rotate_log()
 
-    for mod in HIGH_FREQ:
-        run_module(mod)
+        cycle = get_cycle()
+        with open(LOGFILE, "a") as log:
+            log.write(f"\n--- 第 {cycle} 輪演化開始 ---\n")
 
-    for mod, freq in MID_FREQ.items():
-        if CYCLE % freq == 0:
+        for mod in HIGH_FREQ:
             run_module(mod)
 
-    for mod, freq in LOW_FREQ.items():
-        if CYCLE % freq == 0:
-            run_module(mod)
+        for mod, freq in MID_FREQ.items():
+            if cycle % freq == 0:
+                run_module(mod)
 
-    save_cycle(CYCLE)
-    print(f"[✓] 執行完成，第 {CYCLE} 輪已記錄")
+        for mod, freq in LOW_FREQ.items():
+            if cycle % freq == 0:
+                run_module(mod)
+
+        total = count_modules()
+        with open(LOGFILE, "a") as log:
+            log.write(f"[✓] 第 {cycle} 輪完成，當前模組數：{total}\n")
+
+        save_cycle(cycle)
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
