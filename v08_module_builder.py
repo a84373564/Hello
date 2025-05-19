@@ -2,28 +2,19 @@ import os
 import json
 import random
 import string
+from datetime import datetime
 
 PRICE_DIR = "prices"
 MODULE_DIR = "modules"
 os.makedirs(MODULE_DIR, exist_ok=True)
 
-try:
-    with open("/mnt/data/hello/mexc_keys.json") as f:
-        keys = json.load(f)
-        print("[Ω] API 金鑰載入成功")
-except Exception:
-    print("[!] 未偵測到 API 金鑰設定檔，跳過自動同步")
-    keys = None
-
 def generate_module(symbol):
     code = f"""
-import random
-
 def run(data, capital, history):
     log = []
     holding = False
-    min_capital = 10
     position_size = 0.1
+    min_capital = 10
 
     for i in range(len(data["close"])):
         price = data["close"][i]
@@ -45,34 +36,27 @@ def run(data, capital, history):
 """
     return code.strip()
 
-symbols = []
+today = datetime.now().strftime("%Y%m%d")
+count = 0
+
 for fname in os.listdir(PRICE_DIR):
     if not fname.endswith(".json"):
         continue
-
     symbol = fname.replace(".json", "")
-    fpath = os.path.join(PRICE_DIR, fname)
-
     try:
-        with open(fpath, "r") as f:
+        with open(os.path.join(PRICE_DIR, fname)) as f:
             data = json.load(f)
-        if "close" not in data and isinstance(data, list):
-            data = {"close": data}
-            with open(fpath, "w") as f:
-                json.dump(data, f)
-        if "close" in data and isinstance(data["close"], list) and len(data["close"]) > 10:
-            symbols.append(symbol)
+            if "close" not in data:
+                raise ValueError("缺少 close 資料")
     except Exception as e:
-        print(f"[!] 無法讀取 {fname}：{e}")
+        print(f"[!] 略過 {symbol}，原因：{e}")
+        continue
 
-count = 0
-for sym in symbols:
-    for _ in range(5):
-        name = f"module_20250519_{''.join(random.choices(string.digits, k=6))}_{sym}_mad.py"
-        path = os.path.join(MODULE_DIR, name)
-        with open(path, "w") as f:
-            f.write(generate_module(sym))
-        print(f"[✓] 模組儲存：{name}")
+    for _ in range(5):  # 每個幣種產 5 支模組
+        modname = f"module_{today}_{''.join(random.choices(string.digits, k=6))}_{symbol}_mad.py"
+        with open(os.path.join(MODULE_DIR, modname), "w") as f:
+            f.write(generate_module(symbol))
+        print(f"[✓] 產出模組：{modname}")
         count += 1
 
-print(f"[Ω] 本輪總共產出 {count} 支模組")
+print(f"[Ω] 本輪共產出 {count} 支模組")
