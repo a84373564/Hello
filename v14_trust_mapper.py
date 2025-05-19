@@ -1,9 +1,10 @@
+# /mnt/data/hello/v14_trust_mapper.py
 import json
 import os
 from datetime import datetime
 
-TRUST_FILE = "trust_map.json"
-HISTORY_FILE = "trust_history.json"
+TRUST_FILE = "/mnt/data/hello/trust_map.json"
+HISTORY_FILE = "/mnt/data/hello/trust_history.json"
 
 def load_trust_map():
     if not os.path.exists(TRUST_FILE):
