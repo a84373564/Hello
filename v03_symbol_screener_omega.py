@@ -1,11 +1,12 @@
-import os
+# /mnt/data/hello/v03_symbol_screener_omega.py
+import ccxt
 import json
-import requests
-import time
+import os
+import traceback
 
 KEY_PATH = "/mnt/data/hello/mexc_keys.json"
 PRICE_DIR = "/mnt/data/hello/prices"
-TOP_LIMIT = 3  # 同時最多抓幾種幣
+TOP_LIMIT = 5  # 可自調最多下載幣數
 
 os.makedirs(PRICE_DIR, exist_ok=True)
 
@@ -13,24 +14,44 @@ def get_keys():
     try:
         with open(KEY_PATH, "r") as f:
             keys = json.load(f)
-        return keys["api_key"], keys["api_secret"]
+        return keys["apiKey"], keys["api_secret"]
     except Exception as e:
-        print(f"[!] 載入 API 金鑰失敗：{e}")
+        print(f"[!] 金鑰讀取失敗：{e}")
         return None, None
 
-def get_top_symbols():
-    try:
-        resp = requests.get("https://api.mexc.com/api/v3/ticker/24hr", timeout=10)
-        data = resp.json()
-        ranked = sorted(
-            [d for d in data if d["symbol"].endswith("USDT")],
-            key=lambda x: float(x.get("quoteVolume", 0)),
-            reverse=True
-        )
-        return [r["symbol"] for r in ranked[:TOP_LIMIT]]
-    except Exception as e:
-        print(f"[!] 無法取得幣種列表：{e}")
+def get_top_symbols(limit=TOP_LIMIT):
+    api_key, api_secret = get_keys()
+    if not api_key or not api_secret:
         return []
+
+    exchange = ccxt.mexc({
+        'apiKey': api_key,
+        'secret': api_secret,
+        'enableRateLimit': True
+    })
+
+    try:
+        markets = exchange.load_markets()
+    except Exception as e:
+        print(f"[!] 無法載入市場資料：{e}")
+        return []
+
+    symbols = []
+    for symbol in markets:
+        market = markets[symbol]
+        if not market['active'] or not symbol.endswith('/USDT'):
+            continue
+        try:
+            ticker = exchange.fetch_ticker(symbol)
+            volume_usd = ticker['baseVolume'] * ticker['last']
+            price_range = (ticker['high'] - ticker['low']) / ticker['low'] if ticker['low'] > 0 else 0
+            if volume_usd > 1_000_000 and price_range > 0.03:
+                symbols.append((symbol.replace("/", ""), volume_usd, price_range))
+        except Exception:
+            continue
+
+    symbols.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    return [s[0] for s in symbols[:limit]]
 
 def download_price(symbol):
     try:
@@ -40,19 +61,20 @@ def download_price(symbol):
         result = [{"close": float(c[4])} for c in data]
         with open(f"{PRICE_DIR}/{symbol}.json", "w") as f:
             json.dump(result, f)
-        print(f"[✓] 已下載：{symbol}")
+        print(f"[✓] 價格下載完成：{symbol}")
     except Exception as e:
-        print(f"[!] 下載價格失敗 {symbol}：{e}")
+        print(f"[!] 價格下載錯誤 {symbol}：{e}")
 
 def main():
-    print("[Ω] 啟動 v03 幣種偵測器（強化版）")
+    print("[Ω] 啟動 v03 幣種偵測器（終極強化版）")
     symbols = get_top_symbols()
     if not symbols:
         print("[!] 無可用幣種，略過")
         return
     for sym in symbols:
         download_price(sym)
-    print(f"[Ω] 幣種與價格下載完成：{len(symbols)} 種")
+    print(f"[Ω] 幣種與價格完成：{len(symbols)} 種")
 
 if __name__ == "__main__":
+    import requests
     main()
