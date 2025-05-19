@@ -1,43 +1,35 @@
 import os
 import json
-from datetime import datetime
 
-MODULE_DIR = "/mnt/data/hello/modules"
-LOG_PATH = "/mnt/data/hello/module_log.json"
-THRESHOLD = 0.0  # 分數低於此值的模組會被刪除
+LOG_PATH = "module_log.json"
+MODULE_DIR = "modules"
+MAX_MODULES = 100  # 只保留前 100 名
 
-def load_log():
-    if not os.path.exists(LOG_PATH):
-        print("[×] 無 module_log.json，無法進行清理")
-        return []
-    with open(LOG_PATH, "r") as f:
-        return json.load(f)
+print("[v16] 啟動精英模組修剪器")
 
-def delete_module(filename):
-    path = os.path.join(MODULE_DIR, filename)
-    if os.path.exists(path):
-        os.remove(path)
-        print(f"[−] 已刪除：{filename}")
-    else:
-        print(f"[!] 模組不存在：{filename}")
+if not os.path.exists(LOG_PATH):
+    print("[!] 尚無模組績效記錄，略過修剪")
+    exit(0)
 
-def main():
-    log = load_log()
-    if not log:
-        return
+with open(LOG_PATH) as f:
+    logs = json.load(f)
 
-    total = 0
-    deleted = 0
+# 依 score 排序，取前 100 名模組
+logs_sorted = sorted(logs, key=lambda x: x.get("score", 0), reverse=True)
+elite_files = set([entry.get("file") for entry in logs_sorted[:MAX_MODULES]])
 
-    for entry in log:
-        total += 1
-        score = entry.get("score", 0)
-        module = entry.get("module")
-        if score < THRESHOLD:
-            delete_module(module)
-            deleted += 1
+# 刪除模組資料夾中其餘不是精英的
+removed = 0
+for fname in os.listdir(MODULE_DIR):
+    if not fname.endswith(".py"):
+        continue
+    if fname not in elite_files:
+        path = os.path.join(MODULE_DIR, fname)
+        try:
+            os.remove(path)
+            removed += 1
+            print(f"[v16] 移除非精英模組：{fname}")
+        except Exception as e:
+            print(f"[!] 無法刪除 {fname}，錯誤：{e}")
 
-    print(f"[✓] 清理完成，總模組數：{total}，已刪除：{deleted}")
-
-if __name__ == "__main__":
-    main()
+print(f"[v16] 精英修剪完成，已保留 {MAX_MODULES} 支模組，剃除 {removed} 支")
