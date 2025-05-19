@@ -1,64 +1,78 @@
-import json
 import os
-import math
+import json
+import random
+import string
 
-RECORD_FILE = "module_records.json"
-OUTPUT_FILE = "module_scores.json"
+PRICE_DIR = "prices"
+MODULE_DIR = "modules"
+os.makedirs(MODULE_DIR, exist_ok=True)
 
-def calculate_performance(log, initial_capital):
-    trades = [entry for entry in log if entry["action"] == "sell"]
-    if not trades:
-        return 0, 0, 0, 0
+try:
+    with open("/mnt/data/hello/mexc_keys.json") as f:
+        keys = json.load(f)
+        print("[Ω] API 金鑰載入成功")
+except Exception:
+    print("[!] 未偵測到 API 金鑰設定檔，跳過自動同步")
+    keys = None
 
-    wins = [t for t in trades if t["profit"] > 0]
-    win_rate = len(wins) / len(trades)
+def generate_module(symbol):
+    code = f"""
+import random
 
-    equity_curve = [initial_capital]
-    capital = initial_capital
-    for trade in trades:
-        capital += capital * trade["profit"]
-        equity_curve.append(capital)
+def run(data, capital, history):
+    log = []
+    holding = False
+    min_capital = 10
+    position_size = 0.1
 
-    drawdowns = []
-    peak = equity_curve[0]
-    for cap in equity_curve:
-        if cap > peak:
-            peak = cap
-        dd = (peak - cap) / peak
-        drawdowns.append(dd)
-    max_drawdown = max(drawdowns)
+    for i in range(len(data["close"])):
+        price = data["close"][i]
+        if i % 5 == 0 and not holding:
+            if capital >= min_capital:
+                capital -= price * position_size
+                log.append(f"Buy at {{price:.2f}}")
+                holding = True
+        elif i % 5 == 3 and holding:
+            capital += price * position_size
+            log.append(f"Sell at {{price:.2f}}")
+            holding = False
 
-    returns = [trade["profit"] for trade in trades]
-    avg_return = sum(returns) / len(returns)
-    stddev = math.sqrt(sum((r - avg_return)**2 for r in returns) / len(returns)) if len(returns) > 1 else 0
-    sharpe = avg_return / stddev if stddev > 0 else 0
+    return {{
+        "log": log,
+        "score": random.uniform(-50, 50),
+        "symbol": "{symbol}"
+    }}
+"""
+    return code.strip()
 
-    return round(win_rate, 4), round(max_drawdown, 4), round(sharpe, 4), round(equity_curve[-1] - initial_capital, 2)
+symbols = []
+for fname in os.listdir(PRICE_DIR):
+    if not fname.endswith(".json"):
+        continue
 
-def main():
-    if not os.path.exists(RECORD_FILE):
-        print("[Î©] å°æªç¼ç¾æ¨¡æ¬ç´éï¼è«åå·è¡ v09")
-        return
+    symbol = fname.replace(".json", "")
+    fpath = os.path.join(PRICE_DIR, fname)
 
-    with open(RECORD_FILE, "r") as f:
-        records = json.load(f)
+    try:
+        with open(fpath, "r") as f:
+            data = json.load(f)
+        if "close" not in data and isinstance(data, list):
+            data = {"close": data}
+            with open(fpath, "w") as f:
+                json.dump(data, f)
+        if "close" in data and isinstance(data["close"], list) and len(data["close"]) > 10:
+            symbols.append(symbol)
+    except Exception as e:
+        print(f"[!] 無法讀取 {fname}：{e}")
 
-    scores = {}
-    for mod, result in records.items():
-        log = result.get("log", [])
-        capital = result.get("final_capital", 100)
-        initial = result.get("score", 0) + 100
-        win_rate, max_dd, sharpe, net_profit = calculate_performance(log, initial)
-        scores[mod] = {
-            "score": net_profit,
-            "win_rate": win_rate,
-            "max_drawdown": max_dd,
-            "sharpe": sharpe
-        }
-        print(f"[Î©] {mod} â Score: {net_profit:.2f}, Win: {win_rate:.2%}, DD: {max_dd:.2%}, Sharpe: {sharpe:.2f}")
+count = 0
+for sym in symbols:
+    for _ in range(5):
+        name = f"module_20250519_{''.join(random.choices(string.digits, k=6))}_{sym}_mad.py"
+        path = os.path.join(MODULE_DIR, name)
+        with open(path, "w") as f:
+            f.write(generate_module(sym))
+        print(f"[✓] 模組儲存：{name}")
+        count += 1
 
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(scores, f, indent=2)
-
-if __name__ == "__main__":
-    main()
+print(f"[Ω] 本輪總共產出 {count} 支模組")
