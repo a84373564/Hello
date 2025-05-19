@@ -1,14 +1,15 @@
+# /mnt/data/hello/v11_decision_engine.py
 import json
 import os
 
-SCORE_FILE = "module_scores.json"
-TRUST_FILE = "trust_map.json"
+SCORE_FILE = "/mnt/data/hello/module_scores.json"
+TRUST_FILE = "/mnt/data/hello/trust_map.json"
 
-# 設定門檻
-MIN_SCORE = 5       # 淨利潤需超過 5 USDT
-MIN_WIN_RATE = 0.6  # 勝率需超過 60%
-MAX_DRAWDOWN = 0.3  # 最大回撤不得超過 30%
-MIN_SHARPE = 1.0    # Sharpe ratio 至少為 1.0
+# 門檻參數（與原版一致）
+MIN_SCORE = 5
+MIN_WIN_RATE = 0.6
+MAX_DRAWDOWN = 0.3
+MIN_SHARPE = 1.0
 
 def load_scores():
     if not os.path.exists(SCORE_FILE):
@@ -18,11 +19,11 @@ def load_scores():
         return json.load(f)
 
 def update_trust_map(recommendations):
-    if not os.path.exists(TRUST_FILE):
-        trust_map = {}
-    else:
+    if os.path.exists(TRUST_FILE):
         with open(TRUST_FILE, "r") as f:
             trust_map = json.load(f)
+    else:
+        trust_map = {}
 
     for mod, status in recommendations.items():
         trust = trust_map.get(mod, {"score": 0, "recommended": False})
@@ -36,22 +37,26 @@ def update_trust_map(recommendations):
 
     with open(TRUST_FILE, "w") as f:
         json.dump(trust_map, f, indent=2)
-    print("[Ω] 信心圖譜已更新。")
+    print("[Ω] 信心圖譜已更新")
 
 def main():
     scores = load_scores()
     recommendations = {}
     for mod, s in scores.items():
-        if (
-            s["score"] >= MIN_SCORE and
-            s["win_rate"] >= MIN_WIN_RATE and
-            s["max_drawdown"] <= MAX_DRAWDOWN and
-            s["sharpe"] >= MIN_SHARPE
-        ):
-            recommendations[mod] = "RECOMMENDED"
-        else:
-            recommendations[mod] = "REJECTED"
-        print(f"[Ω] 模組 {mod}: {recommendations[mod]}")
+        try:
+            if (
+                s["profit"] >= MIN_SCORE and
+                s["win_rate"] >= MIN_WIN_RATE and
+                s["drawdown"] <= MAX_DRAWDOWN and
+                s["sharpe"] >= MIN_SHARPE
+            ):
+                recommendations[mod] = "RECOMMENDED"
+                print(f"[+] 推薦模組：{mod}")
+            else:
+                recommendations[mod] = "REJECTED"
+                print(f"[x] 拒絕模組：{mod}")
+        except Exception as e:
+            print(f"[!] 模組分析失敗 {mod}：{e}")
 
     update_trust_map(recommendations)
 
