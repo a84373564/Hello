@@ -5,9 +5,10 @@ from datetime import datetime
 
 MODULE_DIR = "/mnt/data/hello/modules"
 LOG_PATH = "/mnt/data/hello/module_log.json"
+PRICE_DIR = "/mnt/data/hello/prices"
+SYMBOL_LIST_PATH = "/mnt/data/hello/top_symbols.json"
 os.makedirs(MODULE_DIR, exist_ok=True)
 
-# 動態載入 v05_capital_core.py
 def get_risk_parameters():
     import importlib.util
     path = os.path.join(os.path.dirname(__file__), "v05_capital_core.py")
@@ -16,7 +17,6 @@ def get_risk_parameters():
     spec.loader.exec_module(mod)
     return mod.get_risk_parameters()
 
-# 動態載入 indicator_library.py
 def get_indicator_logic(indicator):
     import importlib.util
     path = os.path.join(os.path.dirname(__file__), "indicator_library.py")
@@ -25,7 +25,25 @@ def get_indicator_logic(indicator):
     spec.loader.exec_module(lib)
     return lib.get_indicator_logic(indicator)
 
-# 模擬模組執行，取得 score
+def load_real_data(symbol):
+    filepath = os.path.join(PRICE_DIR, f"{symbol}.json")
+    if not os.path.exists(filepath):
+        print(f"[×] 缺少價格資料：{symbol}.json")
+        return None
+    with open(filepath, "r") as f:
+        raw = json.load(f)
+        if len(raw) < 20:
+            print(f"[!] {symbol} 資料不足")
+            return None
+        return {
+            "rsi": [c["close"] for c in raw][-14:],
+            "macd": [c["close"] for c in raw][-26:],
+            "signal": [c["close"] for c in raw][-26:],
+            "ma": [c["close"] for c in raw][-10:],
+            "close": [c["close"] for c in raw],
+            "atr": [c["high"] - c["low"] for c in raw][-14:]
+        }
+
 def simulate_module(module_code, data, history):
     local_env = {}
     try:
@@ -39,18 +57,6 @@ def simulate_module(module_code, data, history):
         print(f"[×] 模擬錯誤：{str(e)}")
         return -999
 
-# 假資料，會觸發策略邏輯
-def mock_data():
-    return {
-        "rsi": [85, 90, 92],
-        "macd": [0.002, 0.004, 0.006],
-        "signal": [0.001, 0.002, 0.003],
-        "ma": [100, 99, 98],
-        "close": [101, 98, 96],
-        "atr": [1.1, 1.2, 1.4]
-    }
-
-# 建構模組邏輯程式碼
 def generate_candidate_module(indicator):
     logic = get_indicator_logic(indicator)
     if logic is None:
@@ -72,7 +78,6 @@ def run(data, capital, history):
 """.strip()
     return code
 
-# 記錄模組資訊到 module_log.json
 def log_module(filename, score, indicator):
     try:
         log_data = []
@@ -91,11 +96,20 @@ def log_module(filename, score, indicator):
     except Exception as e:
         print(f"[×] 紀錄失敗：{str(e)}")
 
-# 主流程
 def main():
+    if not os.path.exists(SYMBOL_LIST_PATH):
+        print("[×] 找不到 top_symbols.json，請先執行選幣模組")
+        return
+    with open(SYMBOL_LIST_PATH, "r") as f:
+        symbols = json.load(f)
+
     indicators = ["rsi", "macd", "ma", "atr"]
     candidates = []
-    data = mock_data()
+    symbol = random.choice(symbols)
+    data = load_real_data(symbol)
+    if not data:
+        print("[×] 無法載入實價資料")
+        return
     history = {"initial_capital": get_risk_parameters()["capital"]}
 
     for _ in range(8):
@@ -103,7 +117,7 @@ def main():
         code = generate_candidate_module(ind)
         if code:
             score = simulate_module(code, data, history)
-            print(f"[候選] {ind} score={score}")
+            print(f"[候選] {symbol}-{ind} 得分：{score}")
             candidates.append((score, code, ind))
 
     if not candidates:
@@ -113,12 +127,11 @@ def main():
     best = sorted(candidates, key=lambda x: x[0], reverse=True)[0]
     best_score, best_code, best_ind = best
 
-    filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{best_ind}.py"
+    filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_{best_ind}.py"
     with open(os.path.join(MODULE_DIR, filename), "w") as f:
         f.write(best_code)
 
-    log_module(filename, best_score, best_ind)
-
+    log_module(filename, best_score, f"{symbol}-{best_ind}")
     print(f"[✓] 最強模組已產生：{filename}，score={best_score:.2f}")
 
 if __name__ == "__main__":
