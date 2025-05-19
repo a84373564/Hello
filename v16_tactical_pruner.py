@@ -1,32 +1,37 @@
+# /mnt/data/hello/v16_tactical_pruner.py
 import os
 import json
 
-LOG_PATH = "module_log.json"
-MODULE_DIR = "modules"
-MAX_MODULES = 100  # 最多保留 100 個模組
+MODULE_DIR = "/mnt/data/hello/modules"
+SCORE_FILE = "/mnt/data/hello/module_scores.json"
+MAX_MODULES = 100
 
-print("[v16] 啟動策略性修剪器")
+def load_scores():
+    if not os.path.exists(SCORE_FILE):
+        print("[!] 找不到 module_scores.json，請先執行 v10")
+        return {}
+    with open(SCORE_FILE, "r") as f:
+        return json.load(f)
 
-if not os.path.exists(LOG_PATH):
-    print("[!] 尚無模組績效記錄，略過修剪")
-    exit(0)
+def prune_top_modules(scores):
+    # 對照你原始邏輯：取前 N 名模組檔案名
+    sorted_entries = sorted(scores.items(), key=lambda x: x[1].get("score", 0), reverse=True)
+    keep_set = set(entry[0] for entry in sorted_entries[:MAX_MODULES])
 
-with open(LOG_PATH) as f:
-    logs = json.load(f)
+    removed = 0
+    for fname in os.listdir(MODULE_DIR):
+        if not fname.endswith(".json"):
+            continue
+        if fname not in keep_set:
+            os.remove(os.path.join(MODULE_DIR, fname))
+            removed += 1
+            print(f"[×] 剃除模組：{fname}")
 
-# 只保留有 score 且有 file 欄位的模組，並依 score 由高至低排序
-logs_filtered = [entry for entry in logs if "score" in entry and "file" in entry]
-logs_sorted = sorted(logs_filtered, key=lambda x: x["score"], reverse=True)
-keep_files = set(entry["file"] for entry in logs_sorted[:MAX_MODULES])
+    print(f"[✓] 修剪完成，只保留前 {MAX_MODULES}，共剃除 {removed} 支模組")
 
-removed = 0
-for fname in os.listdir(MODULE_DIR):
-    if not fname.endswith(".py"):
-        continue
-    if fname not in keep_files:
-        fpath = os.path.join(MODULE_DIR, fname)
-        os.remove(fpath)
-        removed += 1
-        print(f"[x] 剃除模組：{fname}")
+def main():
+    scores = load_scores()
+    prune_top_modules(scores)
 
-print(f"[v16] 修剪完成，僅保留 top {MAX_MODULES}，共剃除 {removed} 支模組")
+if __name__ == "__main__":
+    main()
