@@ -2,6 +2,7 @@ import os
 import json
 import random
 from indicator_library import get_indicator_logic
+from v05_capital_core import get_risk_parameters
 
 MODULE_DIR = "/mnt/data/hello/modules"
 MEMORY_PATH = "/mnt/data/hello/memory/trust_map.json"
@@ -17,16 +18,26 @@ def generate_module(symbol):
         print(f"[跳過] 不支援的指標：{indicator}")
         return None
 
+    risk_params = get_risk_parameters()
+    capital = risk_params["capital"]
+    max_risk = risk_params["max_risk"]
+    position_size = risk_params["position_size"]
+
     code = f"""
 def run(data, capital, history):
+    log = []
+    capital = {capital}  # 起始資金
+    max_risk = {max_risk}  # 最大風險承擔
+    position_size = {position_size}  # 單次下單金額
 {logic}
     return {{
         'log': log,
         'final_capital': capital,
         'score': capital - history.get('initial_capital', 100)
     }}
-"""
-    return code.strip()
+""".strip()
+
+    return code
 
 def update_memory(filename, indicator):
     if os.path.exists(MEMORY_PATH):
@@ -37,19 +48,3 @@ def update_memory(filename, indicator):
     memory[filename] = {"indicator": indicator}
     with open(MEMORY_PATH, "w") as f:
         json.dump(memory, f, indent=2)
-
-def main():
-    with open(TOP_SYMBOLS_PATH, "r") as f:
-        symbols = json.load(f)
-
-    for symbol in symbols:
-        filename = f"mod_{symbol.lower()}_{random.randint(1000,9999)}.py"
-        path = os.path.join(MODULE_DIR, filename)
-        code = generate_module(symbol)
-        if code:
-            with open(path, "w") as f:
-                f.write(code)
-            update_memory(filename, "auto")
-
-if __name__ == "__main__":
-    main()
