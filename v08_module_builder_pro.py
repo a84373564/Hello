@@ -7,6 +7,10 @@ MODULE_DIR = "/mnt/data/hello/modules"
 LOG_PATH = "/mnt/data/hello/module_log.json"
 PRICE_DIR = "/mnt/data/hello/prices"
 SYMBOL_LIST_PATH = "/mnt/data/hello/top_symbols.json"
+TOP_N = 3  # 精選保留的模組數量
+BUILD_PER_SYMBOL = 5  # 每個幣建構幾個模組
+INDICATORS = ["rsi", "macd", "ma", "atr"]
+
 os.makedirs(MODULE_DIR, exist_ok=True)
 
 def get_risk_parameters():
@@ -49,7 +53,6 @@ def simulate_module(module_code, data, history):
     try:
         exec(module_code, local_env)
         if "run" not in local_env:
-            print("[×] 模組未定義 run()")
             return -999
         result = local_env["run"](data, capital=history["initial_capital"], history=history)
         return result.get("score", -999)
@@ -60,7 +63,6 @@ def simulate_module(module_code, data, history):
 def generate_candidate_module(indicator):
     logic = get_indicator_logic(indicator)
     if logic is None:
-        print(f"[×] 不支援指標：{indicator}")
         return None
     risk = get_risk_parameters()
     code = f"""
@@ -103,36 +105,32 @@ def main():
     with open(SYMBOL_LIST_PATH, "r") as f:
         symbols = json.load(f)
 
-    indicators = ["rsi", "macd", "ma", "atr"]
     candidates = []
-    symbol = random.choice(symbols)
-    data = load_real_data(symbol)
-    if not data:
-        print("[×] 無法載入實價資料")
-        return
-    history = {"initial_capital": get_risk_parameters()["capital"]}
-
-    for _ in range(8):
-        ind = random.choice(indicators)
-        code = generate_candidate_module(ind)
-        if code:
-            score = simulate_module(code, data, history)
-            print(f"[候選] {symbol}-{ind} 得分：{score}")
-            candidates.append((score, code, ind))
+    for symbol in symbols[:5]:  # 掃前 5 個幣
+        data = load_real_data(symbol)
+        if not data:
+            continue
+        history = {"initial_capital": get_risk_parameters()["capital"]}
+        for _ in range(BUILD_PER_SYMBOL):
+            ind = random.choice(INDICATORS)
+            code = generate_candidate_module(ind)
+            if code:
+                score = simulate_module(code, data, history)
+                print(f"[候選] {symbol}-{ind} 得分：{score}")
+                candidates.append((score, code, symbol, ind))
 
     if not candidates:
-        print("[×] 無可用模組產生")
+        print("[×] 無任何模組產生")
         return
 
-    best = sorted(candidates, key=lambda x: x[0], reverse=True)[0]
-    best_score, best_code, best_ind = best
-
-    filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_{best_ind}.py"
-    with open(os.path.join(MODULE_DIR, filename), "w") as f:
-        f.write(best_code)
-
-    log_module(filename, best_score, f"{symbol}-{best_ind}")
-    print(f"[✓] 最強模組已產生：{filename}，score={best_score:.2f}")
+    best_models = sorted(candidates, key=lambda x: x[0], reverse=True)[:TOP_N]
+    for model in best_models:
+        score, code, symbol, ind = model
+        filename = f"module_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{symbol}_{ind}.py"
+        with open(os.path.join(MODULE_DIR, filename), "w") as f:
+            f.write(code)
+        log_module(filename, score, f"{symbol}-{ind}")
+        print(f"[✓] 儲存：{filename}，score={score:.2f}")
 
 if __name__ == "__main__":
     main()
